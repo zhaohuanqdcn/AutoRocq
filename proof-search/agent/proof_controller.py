@@ -1,4 +1,6 @@
 import os
+import sys
+import select
 
 from pathlib import Path
 from typing import Dict, Optional, Any, List
@@ -8,6 +10,7 @@ from agent.proof_tree import ProofTree
 from utils.recorder import create_proof_recorder
 from utils.logger import clean_ansi_codes, setup_logger
 from utils.coq_utils import hints_from_error, goal_diff
+from utils.config import InteractiveConfig
 
 class ProofController:
     """
@@ -26,7 +29,8 @@ class ProofController:
         enable_hammer: bool = False,
         max_context_search: int = 3,
         history_file: str = "tactic_history.json",
-        recording_output_dir: str = "data/statistics"
+        recording_output_dir: str = "data/statistics",
+        interactive: Optional[InteractiveConfig] = None
     ):
         
         self.steps_since_restart = 0
@@ -47,6 +51,10 @@ class ProofController:
         self.give_up = False
         
         self.proof_tree = None
+        
+        # Interactive mode
+        self.interactive = interactive or InteractiveConfig()
+        self._baseline_steps = 0  # Pre-existing steps from human edits
 
         self.max_steps = max_steps
         self.max_errors = max_errors
@@ -194,6 +202,63 @@ class ProofController:
             self.logger.error(f"❌ Error during proof state reload: {e}")
             return False
 
+    #######################################
+    ##  Interactive mode (pause/resume)  ##
+    #######################################
+
+    def _has_pause_input(self) -> bool:
+        """Non-blocking check for keyboard input on stdin."""
+        try:
+            ready, _, _ = select.select([sys.stdin], [], [], 0)
+            return bool(ready)
+        except Exception:
+            return False
+
+    def _handle_pause_resume(self) -> Optional[Dict]:
+        """
+        Pause the agent, let the user edit the .v file, then reload on resume.
+        Returns a dict with the new loop state, or None on failure.
+        """
+        # Drain whatever was typed to trigger the pause
+        sys.stdin.readline()
+
+        self.logger.info(f"\n{'='*60}")
+        self.logger.info(f"⏸️  PAUSED — interactive mode")
+        self.logger.info(f"   Proof file: {self.coq.file_path}")
+        self.logger.info(f"   Edit the .v file, then press Enter to resume.")
+        self.logger.info(f"{'='*60}")
+
+        # Block until the user presses Enter again
+        sys.stdin.readline()
+
+        self.logger.info("▶️  Resuming — reloading proof state from file...")
+
+        # Ensure the file ends with Admitted. so CoqInterface can load it
+        CoqInterface.ensure_admitted(self.coq.file_path)
+
+        # Reload the CoqInterface (closes current session, re-opens from disk)
+        success = self.coq.load()
+        if not success:
+            self.logger.error("❌ Failed to reload proof file after resume")
+            return None
+
+        proof = self.coq.get_unproven_proof()
+        if not proof:
+            self.logger.error("❌ No unproven proof after resume")
+            return None
+
+        self._baseline_steps = max(0, len(proof.steps) - 1)
+        self.logger.info(f"🤝 Resumed with {self._baseline_steps} pre-existing tactic(s)")
+
+        self._init_proof_tree()
+
+        # Reset the LLM conversation so we don't carry stale tool-call state
+        self.coq_chat_session.reset_conversation()
+
+        return {
+            'tactics': [],  # Agent tracking starts fresh after resume
+        }
+
     #####################
     ##  Proof methods  ##
     #####################
@@ -244,26 +309,16 @@ class ProofController:
             self.logger.error("❌ No unproven proof available")
             return False
         
-        # Initialize proof tree
-        self.proof_tree = ProofTree()
-        self.logger.info("🌳 Initialized new ProofTree")
-
-        # Show initial goals
-        initial_goals = self.coq.get_goal_str()
-        self.logger.info(f"🎯 Initial goals: {initial_goals}")
+        # Compute baseline: pre-existing steps from human edits (excluding 'Proof.')
+        self._baseline_steps = max(0, len(unproven_proof.steps) - 1) if self.interactive.enabled else 0
+        if self._baseline_steps > 0:
+            self.logger.info(f"🤝 Interactive mode: {self._baseline_steps} pre-existing tactic(s) preserved")
+            for i, step in enumerate(unproven_proof.steps):
+                self.logger.info(f"   [{i}] {step.text.strip()}")
         
-        # Add initial root node to the proof tree
-        if not self.proof_tree.root:
-            initial_hypotheses = self.coq.get_hypothesis()
-            self.proof_tree.add_node(
-                tactic="Proof.",
-                goals_before=initial_goals.strip() if initial_goals else '',
-                goals_after=initial_goals.strip() if initial_goals else '',
-                hypotheses_before=initial_hypotheses.strip() if initial_hypotheses else '',
-                hypotheses_after=initial_hypotheses.strip() if initial_hypotheses else '',
-                step_number=0,
-                subgoals_after=self.coq.get_subgoals()
-            )
+        # Initialize proof tree
+        self._init_proof_tree()
+        self.logger.info("🌳 Initialized new ProofTree")
 
         if self.enable_recording and self.recorder:
             self.recorder.start_proving_time()
@@ -352,6 +407,19 @@ class ProofController:
                 self.logger.info(f"\n{'='*60}\n📊 [PROOF STEP {self.global_step_id}] {self.gen_step_count}/{self.max_steps}. Exiting...")
                 break
             
+            # Interactive mode: check for keyboard pause
+            if self.interactive.enabled and self._has_pause_input():
+                resume_result = self._handle_pause_resume()
+                if resume_result is not None:
+                    successful_tactics_with_states = resume_result['tactics']
+                    _clear_error_tracking()
+                    proof_tree_str = self.proof_tree.get_proof_tree_string()
+                    prompt = self.context_manager.build_initial_prompt(proof_tree_str)
+                    role = "user"
+                    tool_call_id = None
+                    last_tool_success = False
+                    continue
+            
             self.steps_since_restart += 1
             self.global_step_id += 1
             self.logger.info(f"\n{'='*60}\n📊 [PROOF STEP {self.global_step_id}] {self.gen_step_count}/{self.max_steps}\n{'='*60}")
@@ -362,9 +430,10 @@ class ProofController:
             # Sanity check: coq file is consistent with the proof state
             current_step_count = len(successful_tactics_with_states)
             current_step_count_coq = len(self.coq.proof.steps) if self.coq.proof.steps else 0
-            self.logger.debug(f"Step count: state={current_step_count}, coq_file={current_step_count_coq}")
-            if current_step_count + 1 != current_step_count_coq: # +1 because of 'Proof.'
-                self.logger.error(f"Error: Step count mismatch! Exiting early...")
+            expected_coq_steps = current_step_count + 1 + self._baseline_steps  # +1 for 'Proof.'
+            self.logger.debug(f"Step count: agent={current_step_count}, baseline={self._baseline_steps}, coq_file={current_step_count_coq}")
+            if expected_coq_steps != current_step_count_coq:
+                self.logger.error(f"Error: Step count mismatch! expected={expected_coq_steps} != coq={current_step_count_coq}. Exiting early...")
                 exit(1) # Fail fast
             
             decision, tool_call_id = self.context_manager.get_action(prompt, role=role, tool_call_id=tool_call_id, tool_success=last_tool_success)
@@ -614,6 +683,26 @@ class ProofController:
                 continue
         
         return successful_tactics_with_states
+
+    ############################
+    ##  Proof tree / state   ##
+    ############################
+
+    def _init_proof_tree(self):
+        """Initialize a fresh proof tree with a root node from current Coq state."""
+        self.proof_tree = ProofTree()
+        initial_goals = self.coq.get_goal_str()
+        self.logger.info(f"🎯 Initial goals: {initial_goals}")
+        initial_hypotheses = self.coq.get_hypothesis()
+        self.proof_tree.add_node(
+            tactic="Proof.",
+            goals_before=initial_goals.strip() if initial_goals else '',
+            goals_after=initial_goals.strip() if initial_goals else '',
+            hypotheses_before=initial_hypotheses.strip() if initial_hypotheses else '',
+            hypotheses_after=initial_hypotheses.strip() if initial_hypotheses else '',
+            step_number=0,
+            subgoals_after=self.coq.get_subgoals()
+        )
 
     #####################
     ##  Proof helpers  ##

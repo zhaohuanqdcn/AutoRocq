@@ -267,7 +267,8 @@ def initialize_components(args, config: ProofAgentConfig, logger) -> Dict[str, A
             enable_error_feedback=config.enable_error_feedback,
             enable_hammer=config.enable_hammer,
             max_context_search=config.max_context_search,
-            history_file=str(history_file)
+            history_file=str(history_file),
+            interactive=config.interactive
         )
         
         return {
@@ -639,11 +640,15 @@ def main():
         for option in config.coq.coqproject_extra_options:
             logger.info(f"   - {option}")
 
-    # Clean proof by removing existing tactics
-    logger.info("🧹 Pre-cleaning proof file to ensure unproven state...")
-    clean_success = clean_proof_file(args.proof_file, logger)
-    if not clean_success:
-        logger.warning("⚠️ Could not clean proof file - will try CoqInterface methods later")
+    # Clean proof by removing existing tactics. Skip in interactive mode
+    if config.interactive.enabled:
+        logger.debug("🤝 Interactive mode enabled - preserving existing proof tactics")
+        clean_success = True  # Skip cleaning
+    else:
+        logger.debug("🧹 Pre-cleaning proof file to ensure unproven state...")
+        clean_success = clean_proof_file(args.proof_file, logger)
+        if not clean_success:
+            logger.warning("⚠️ Could not clean proof file - will try CoqInterface methods later")
 
     # Initialize components
     try:
@@ -657,7 +662,7 @@ def main():
         coq_interface = components["coq_interface"]
         logger.info(f"✅ Coq interface loaded: {coq_interface.file_path}")
         
-        if not clean_success:
+        if not clean_success and not config.interactive.enabled:
             logger.info("🧹 Attempting CoqInterface-based clearing as backup...")
             try:
                 proof_status = coq_interface.get_proof_completion_status()

@@ -419,6 +419,15 @@ class CoqChatSession:
         self.cached_msg_len = len(self.messages)
 
    
+    def reset_conversation(self):
+        """Reset conversation to just the system prompt, preserving token stats."""
+        system_prompt = self.build_system_prompt()
+        self.messages = []
+        self.cached_msg_len = 0
+        self.add_message("system", system_prompt)
+        self.current_plan = None
+        self.logger.info("🔄 Chat conversation reset")
+
     def get_token_statistics(self):
         return {
             "total_prompt_tokens": self.total_prompt_tokens,

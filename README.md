@@ -115,6 +115,29 @@ python3 -m main examples/main_loop_invariant_2_established_Coq.v --config ./conf
 
 ---
 
+### Interactive Mode (Experimental)
+
+In addition to running AutoRocq in a hands-off style, you can *co-develop* Rocq proofs with the agent in interactive mode.
+The agent preserves your existing proof tactics on startup and you can pause it mid-proof to make edits.
+
+Enable it by adding an `interactive` section to your config (off by default):
+
+```json
+{
+  "interactive": {
+    "enabled": true
+  }
+}
+```
+
+When running with interactive mode enabled:
+
+- **Existing tactics are preserved** — AutoRocq continues from where your partial proof left off instead of clearing it.
+- **Press Enter to pause** — AutoRocq stops and waits for you to edit the `.v` file.
+- **Press Enter again to resume** — AutoRocq reloads the file and continues from your edits.
+
+---
+
 ### Replicating Results from Paper
 
 <details> 
