@@ -110,7 +110,7 @@ cd AutoRocq-bench/libautorocq; make
 For example, go to `proof-search` directory and run:
 
 ```bash
-python3 -m main examples/main_loop_invariant_2_established_Coq.v --config ./configs/default_config.json
+python3 -m main examples/main_assert_rte_signed_overflow.v --config ./configs/default_config.json
 ```
 
 ---

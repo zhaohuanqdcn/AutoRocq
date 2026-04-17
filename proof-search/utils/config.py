@@ -88,7 +88,6 @@ class ProofAgentConfig:
         return cls(
             llm=LLMConfig(),
             coq=CoqConfig(),
-            search=SearchConfig(),
         )
     
     @classmethod
@@ -128,10 +127,7 @@ class ProofAgentConfig:
         config_dict = {
             'llm': asdict(self.llm),
             'coq': asdict(self.coq),
-            'search': asdict(self.search),
-            'mcts': asdict(self.mcts),
             'enable_rollback': self.enable_rollback,
-            'enable_state_saving': self.enable_state_saving,
             'log_level': self.log_level,
             'log_file': self.log_file,
             'output_dir': self.output_dir
@@ -144,7 +140,7 @@ class ProofAgentConfig:
         """Update configuration from dictionary."""
         for key, value in updates.items():
             if hasattr(self, key):
-                if key in ['llm', 'coq', 'search']:
+                if key in ['llm', 'coq']:
                     # Update nested config objects
                     config_obj = getattr(self, key)
                     for sub_key, sub_value in value.items():
