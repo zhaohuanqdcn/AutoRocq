@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from backend.coq_interface import CoqInterface
 from agent.context_manager import ContextManager
 from agent.proof_controller import ProofController
+from agent.interactive_session import InteractiveSessionManager
 
 from utils.config import load_config, ProofAgentConfig
 from utils.logger import setup_logger, global_logger
@@ -97,7 +98,13 @@ Examples:
         action="store_true",
         help="Use local session caching (stored to a local file)"
     )
-    
+
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="Start in interactive mode (human + agent REPL)"
+    )
+
     return parser.parse_args()
 
 
@@ -438,6 +445,40 @@ def cleanup_components(components: Dict[str, Any], logger):
     finally:
         logger.info("Cleanup completed")
 
+
+def ensure_proof_admitted(file_path: str, logger) -> bool:
+    """
+    In interactive mode: if the last proof block has no Admitted./Qed.,
+    append Admitted. so CoqPyt can register it as an unproven proof.
+    Does NOT remove any existing tactics.
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        import re
+        proof_matches = list(re.finditer(r'Proof\s*\.', content, re.IGNORECASE))
+        if not proof_matches:
+            logger.warning("⚠️ No 'Proof.' found in file")
+            return False
+
+        last_proof_end = proof_matches[-1].end()
+        tail = content[last_proof_end:]
+
+        if re.search(r'\b(Qed|Admitted)\s*\.', tail, re.IGNORECASE):
+            logger.debug("Proof already closed — no changes needed")
+            return True
+
+        logger.info("📝 Open proof detected — appending 'Admitted.' for CoqPyt")
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write("\nAdmitted.")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ ensure_proof_admitted failed: {e}")
+        return False
+
+
 def clean_proof_file(file_path: str, logger) -> bool:
     """
     Clean proof file by removing tactics between Proof. and Qed./Admitted.
@@ -640,10 +681,14 @@ def main():
         for option in config.coq.coqproject_extra_options:
             logger.info(f"   - {option}")
 
+    # --interactive flag overrides config
+    if args.interactive:
+        config.interactive.enabled = True
+
     # Clean proof by removing existing tactics. Skip in interactive mode
     if config.interactive.enabled:
         logger.debug("🤝 Interactive mode enabled - preserving existing proof tactics")
-        clean_success = True  # Skip cleaning
+        clean_success = ensure_proof_admitted(args.proof_file, logger)
     else:
         logger.debug("🧹 Pre-cleaning proof file to ensure unproven state...")
         clean_success = clean_proof_file(args.proof_file, logger)
@@ -709,14 +754,19 @@ def main():
             return  # Exit gracefully
         
         print_initial_state(components, logger)
-        
+
         # Run proof attempt
         logger.info("Starting proof attempt...")
         logger.info("=== Starting Proof Attempt ===")
         logger.info(f"Maximum steps allowed: {config.coq.max_steps}")
-        
-        result = components["controller"].prove_theorem(args.theorem)
-        
+
+        if config.interactive.enabled:
+            logger.info("🤝 Interactive mode enabled — entering REPL")
+            session = InteractiveSessionManager(components["controller"])
+            result = session.start(args.theorem)
+        else:
+            result = components["controller"].prove_theorem(args.theorem)
+
         if result:
             logger.info("🎉 Proof completed successfully!")
             exit_code = 0

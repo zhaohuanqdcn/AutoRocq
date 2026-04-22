@@ -16,7 +16,8 @@ class ProofTreeNode:
         parent: 'ProofTreeNode' = None,
         subgoal_index: Optional[int] = None,
         status: str = "Applied",  # "Active", "Applied", "Proved"
-        node_type: str = "tactic"  # "tactic", "subgoal"
+        node_type: str = "tactic",  # "tactic", "subgoal"
+        source: str = "agent"  # "agent" or "user"
     ):
         self.tactic = tactic
         self.goals_before = goals_before
@@ -29,6 +30,7 @@ class ProofTreeNode:
         self.subgoal_index = subgoal_index
         self.status = status
         self.node_type = node_type  # "tactic" or "subgoal"
+        self.source = source  # "agent" or "user"
         self.logger = setup_logger("ProofTreeNode")
 
     def add_child(self, child: 'ProofTreeNode'):
@@ -49,6 +51,7 @@ class ProofTreeNode:
             'subgoal_index': self.subgoal_index,
             'status': self.status,
             'node_type': self.node_type,
+            'source': self.source,
             'goals_before': self.goals_before,
             'goals_after': self.goals_after if self.is_leaf() else "",  # Only show goals_after for leaf nodes
             'hypotheses_before': self.hypotheses_before,

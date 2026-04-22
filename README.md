@@ -115,12 +115,18 @@ python3 -m main examples/main_assert_rte_signed_overflow.v --config ./configs/de
 
 ---
 
-### Interactive Mode (Experimental)
+### Interactive Mode
 
 In addition to running AutoRocq in a hands-off style, you can *co-develop* Rocq proofs with the agent in interactive mode.
-The agent preserves your existing proof tactics on startup and you can pause it mid-proof to make edits.
+The agent exposes a REPL where you can steer, inspect, and contribute tactics alongside the LLM.
 
-Enable it by adding an `interactive` section to your config (off by default):
+**Starting interactive mode** — pass `--interactive` (or `-i`) on the command line:
+
+```bash
+python3 -m main examples/example.v --config ./configs/minimal.json --interactive
+```
+
+Or enable it permanently in your config:
 
 ```json
 {
@@ -130,11 +136,22 @@ Enable it by adding an `interactive` section to your config (off by default):
 }
 ```
 
-When running with interactive mode enabled:
+**REPL commands**
 
-- **Existing tactics are preserved** — AutoRocq continues from where your partial proof left off instead of clearing it.
-- **Press Enter to pause** — AutoRocq stops and waits for you to edit the `.v` file.
-- **Press Enter again to resume** — AutoRocq reloads the file and continues from your edits.
+| Command | Description |
+|---|---|
+| `step` | Agent takes one action (tactic attempt or rollback), then pauses |
+| `run` | Agent runs until the focused goal changes, the agent rolls back, or the proof completes. Failed tactics are handled internally and do not stop `run` |
+| `tactic <tac>` | Apply a Rocq tactic directly (bypasses the LLM). Example: `tactic intros n.` |
+| `hint <text>` | Inject a natural-language hint into the agent's next prompt. Example: `hint try induction on n` |
+| `status` | Display the current proof goal and hypotheses |
+| `tree` | Display the current proof tree with tactic history |
+| `quit` | Exit the session |
+
+**What interactive mode does**
+
+- **Existing tactics are preserved** — if the `.v` file already contains proof steps, AutoRocq replays them before handing control to you.
+- **History is tagged** — tactics applied by the agent are recorded with `source: agent`; tactics you apply directly are recorded with `source: user`.
 
 ---
 

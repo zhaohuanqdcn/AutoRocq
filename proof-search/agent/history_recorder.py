@@ -18,7 +18,8 @@ class TacticHistoryEntry:
     theorem_name: str
     timestamp: datetime
     step_number: Optional[int] = None
-    
+    source: str = "agent"  # "agent" or "user"
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -29,7 +30,8 @@ class TacticHistoryEntry:
             'hypotheses_after': self.hypotheses_after,
             'theorem_name': self.theorem_name,
             'timestamp': self.timestamp.isoformat(),
-            'step_number': self.step_number
+            'step_number': self.step_number,
+            'source': self.source
         }
     
     @classmethod
@@ -50,7 +52,8 @@ class TacticHistoryEntry:
                 hypotheses_after=data.get('hypotheses_after', ''),
                 theorem_name=data['theorem_name'],
                 timestamp=timestamp,
-                step_number=data.get('step_number')
+                step_number=data.get('step_number'),
+                source=data.get('source', 'agent')
             )
         except Exception as e:
             setup_logger("TacticHistoryManager").error(f"Error creating TacticHistoryEntry from dict: {e}")
@@ -129,14 +132,15 @@ class TacticHistoryManager:
             return f"{tactic}|||{hash(goals_before)}|||{hash(goals_after)}"
 
     def add_successful_tactic(
-        self, 
-        tactic: str, 
-        goals_before: str, 
-        goals_after: str, 
-        theorem_name: str, 
+        self,
+        tactic: str,
+        goals_before: str,
+        goals_after: str,
+        theorem_name: str,
         hypotheses_before: str = "",
         hypotheses_after: str = "",
-        step_number: int = None
+        step_number: int = None,
+        source: str = "agent"
     ):
         """Add a successful tactic to history, avoiding duplicates.
         
@@ -161,7 +165,8 @@ class TacticHistoryManager:
                 hypotheses_after=hypotheses_after,
                 theorem_name=theorem_name,
                 timestamp=datetime.now(),
-                step_number=step_number
+                step_number=step_number,
+                source=source
             )
             
             # Add to entries and signature set
