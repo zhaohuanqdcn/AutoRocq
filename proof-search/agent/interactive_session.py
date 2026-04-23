@@ -7,7 +7,11 @@ Commands:
   run               — agent runs until subgoal changes, failure, or proof complete
   tactic <tac>      — apply user-supplied tactic
   hint <text>       — inject natural-language hint into next agent step
+  rollback [n]      — undo last n tactics (user or agent, default 1)
+  search <cmd>      — run a Rocq query (e.g. Search Z.add, Print Z.add_comm, Check Z.add)
   status            — display current proof state
+  tree              — display proof tree
+  help              — show this help
   quit              — exit
 """
 
@@ -51,7 +55,8 @@ class InteractiveSessionManager:
 
         self._display_state()
         if not self._done:
-            print("Interactive mode. Commands: step, run, tactic <tac>, hint <text>, status, tree, quit")
+            print("Interactive mode. Type 'help' for available commands.")
+            self._do_help()
             self._repl()
 
         self.controller._finish_proof(self.controller._tactics_with_states)
@@ -84,16 +89,31 @@ class InteractiveSessionManager:
                     self._do_user_tactic(arg.strip())
                 case "hint":
                     self._do_hint(arg.strip())
+                case "rollback":
+                    n = 1
+                    if arg.strip():
+                        try:
+                            n = int(arg.strip())
+                            if n <= 0:
+                                raise ValueError
+                        except ValueError:
+                            print("Usage: rollback [n]  (n must be a positive integer)")
+                            continue
+                    self._do_rollback(n)
+                case "search":
+                    self._do_search(arg.strip())
                 case "status":
                     self._display_state()
                 case "tree":
                     self._do_tree()
+                case "help":
+                    self._do_help()
                 case "quit":
                     self._do_quit()
                     return
                 case _:
-                    print(f"Unknown command: {raw!r}")
-                    print("Available: step, run, tactic <tac>, hint <text>, status, tree, quit")
+                    print(f"Unknown command: {cmd!r}")
+                    self._do_help()
 
     #####################
     ## Commands        ##
@@ -156,22 +176,7 @@ class InteractiveSessionManager:
             hyps_before or '', hyps_after or ''
         )
         tactic_with_state['source'] = 'user'
-        # Do NOT append to _tactics_with_states; user tactics are
-        # counted via _baseline_steps so the agent step sanity check stays valid.
-        self.controller.successful_tactics.append(tactic)
-
-        self.controller.tactic_history.add_successful_tactic(
-            tactic=tactic,
-            goals_before=goals_before or '',
-            goals_after=goals_after or '',
-            hypotheses_before=hyps_before or '',
-            hypotheses_after=hyps_after or '',
-            theorem_name=self.controller.current_theorem_name,
-            step_number=self.controller.global_step_id,
-            source='user'
-        )
-
-        self.controller._baseline_steps += 1
+        self.controller._tactics_with_states.append(tactic_with_state)
         self.logger.debug(f"User Tactic applied: {tactic!r}")
 
         if not silent:
@@ -192,6 +197,64 @@ class InteractiveSessionManager:
         self.logger.debug(f"User Hint queued: {hint!r}")
         self.controller._pending_hints.append(hint)
         print("Hint queued for next agent step.")
+
+    def _do_rollback(self, n: int):
+        history = self.controller._tactics_with_states
+        if not history:
+            print("No tactics to roll back.")
+            return
+
+        actual_n = min(n, len(history))
+        if actual_n < n:
+            print(f"Warning: only {len(history)} tactic(s) applied; rolling back all.")
+
+        remaining = history[:-actual_n]
+        target_step_number = remaining[-1]['step_number'] if remaining else 0
+
+        # Pop steps from CoqPyt
+        proof = self.controller.coq.get_unproven_proof()
+        if proof:
+            for _ in range(actual_n):
+                self.controller.coq.proof_file.pop_step(proof)
+        self.controller.coq.proof = self.controller.coq.get_unproven_proof()
+
+        # Update proof tree
+        if self.controller.proof_tree is not None:
+            self.controller.proof_tree.delete_subtree_by_step_number(target_step_number)
+
+        self.controller._tactics_with_states[:] = remaining
+
+        self.logger.debug(f"User rollback: {actual_n} tactic(s)")
+        print(f"Rolled back {actual_n} tactic(s).")
+        self._display_state()
+
+    def _do_search(self, cmd: str):
+        if not cmd:
+            print("Usage: search <Rocq command>  (e.g. search Search Z.add  |  search Print Z.add_comm)")
+            return
+        cs = self.controller.context_manager.context_search
+        if cs is None:
+            print("Context search is disabled in this session.")
+            return
+        goal_context = self.controller.coq.get_goal_str() or ""
+        result = cs.search(cmd, goal_context=goal_context)
+        if result and result.content:
+            print(result.content)
+        else:
+            print(f"No results for '{cmd}'.")
+
+    def _do_help(self):
+        print("Commands:")
+        print("  step              — agent takes one action (tactic or rollback)")
+        print("  run               — agent runs until subgoal changes, rollback, or proof complete")
+        print("  tactic <tac>      — apply a user-supplied tactic")
+        print("  hint <text>       — inject hint into next agent step")
+        print("  rollback [n]      — undo last n tactics, user or agent (default 1)")
+        print("  search <cmd>      — run a Rocq query, e.g. 'search Search Z.add' or 'search Print Z.add_comm'")
+        print("  status            — display current proof state")
+        print("  tree              — display proof tree")
+        print("  help              — show this help")
+        print("  quit              — exit")
 
     def _do_tree(self):
         if self.controller.proof_tree is None:

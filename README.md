@@ -1,11 +1,10 @@
 # AutoRocq: Agentic Theorem Prover for Verification
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html) [![License: Commercial](https://img.shields.io/badge/License-Commercial-green.svg)](LICENSE) [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/HfS2zcMzhS)
+[License: GPL v3](https://www.gnu.org/licenses/gpl-3.0.en.html) [License: Commercial](LICENSE) [Discord](https://discord.gg/HfS2zcMzhS)
 
 **Paper**: [FSE 2026](https://arxiv.org/abs/2511.17330)
 
 ---
-
 
 This repository contains the source code of AutoRocq, an agent prover in Rocq (formerly Coq) 8.18.0.
 
@@ -60,7 +59,7 @@ scripts/                           # Directory of scripts
 pip install -r requirement.txt
 ```
 
-2. Install dependencies in opam
+1. Install dependencies in opam
 
 ```bash
 opam switch import deps.opam
@@ -69,18 +68,19 @@ opam switch import deps.opam
 ### Minimal Example of Proof Agent
 
 1. Set up API key in the config or by running `export OPENAI_API_KEY=...`
-
-2. To prove [`examples/example.v`](proof-search/examples/example.v) with a minimal [config](proof-search/configs/minimal.json), go to `proof-search` directory and run:
+2. To prove `[examples/example.v](proof-search/examples/example.v)` with a minimal [config](proof-search/configs/minimal.json), go to `proof-search` directory and run:
 
 ```bash
 python3 -m main examples/example.v --config ./configs/minimal.json
 ```
 
 If AutoRocq runs successfully, you will be able to see in the terminal
+
 ```
 [INFO] [Main]: 🎉 Proof completed successfully!
 ```
-and the proof script is saved in the same [`example.v`](proof-search/examples/example.v) file. You will also be able to find saved proof states and aggregated results at `data/`, which can be reused to prove other goals in the future.
+
+and the proof script is saved in the same `[example.v](proof-search/examples/example.v)` file. You will also be able to find saved proof states and aggregated results at `data/`, which can be reused to prove other goals in the future.
 
 For more configurations of the tool, check out the [readme](proof-search/configs/readme.md) or run with `--help` for more options.
 
@@ -97,15 +97,14 @@ To test on this benchmark:
 git submodule update --init --recursive
 ```
 
-2. Compile `libautorocq` by running
+1. Compile `libautorocq` by running
 
 ```bash
 cd AutoRocq-bench/libautorocq; make
 ```
 
-3. Configure `library_paths` in `proof-search/configs/default_config.json` to point to `libautorocq`.
-
-4. Run the agent by pointing to the target `.v` file. The first run may take a few minutes to initialize the library.
+1. Configure `library_paths` in `proof-search/configs/default_config.json` to point to `libautorocq`.
+2. Run the agent by pointing to the target `.v` file. The first run may take a few minutes to initialize the library.
 
 For example, go to `proof-search` directory and run:
 
@@ -136,31 +135,32 @@ Or enable it permanently in your config:
 }
 ```
 
-**REPL commands**
-
-| Command | Description |
-|---|---|
-| `step` | Agent takes one action (tactic attempt or rollback), then pauses |
-| `run` | Agent runs until the focused goal changes, the agent rolls back, or the proof completes. Failed tactics are handled internally and do not stop `run` |
-| `tactic <tac>` | Apply a Rocq tactic directly (bypasses the LLM). Example: `tactic intros n.` |
-| `hint <text>` | Inject a natural-language hint into the agent's next prompt. Example: `hint try induction on n` |
-| `status` | Display the current proof goal and hypotheses |
-| `tree` | Display the current proof tree with tactic history |
-| `quit` | Exit the session |
-
 **What interactive mode does**
 
-- **Existing tactics are preserved** — if the `.v` file already contains proof steps, AutoRocq replays them before handing control to you.
-- **History is tagged** — tactics applied by the agent are recorded with `source: agent`; tactics you apply directly are recorded with `source: user`.
+- **Stepping through proofs** — you can step through AutoRocq's generation and understand its trajectory.
+- **Adding hints for agent** — You can add natural language `hint` to guide AutoRocq's proof strategy.
+- **Co-writing proofs** — you can directly add `tactic`, print `tree`, run `search`, or `rollback` as you wish. Existing proof steps and manual edits are preserved, AutoRocq picks up exactly where you left.
+
+**REPL commands**
+
+| Command        | Description                                                                                                                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `step`         | Agent takes one action (tactic attempt or rollback), then pauses                                                                                                                                |
+| `run`          | Agent runs until the focused goal changes, the agent rolls back, or the proof completes. Failed tactics are handled internally and do not stop `run`                                            |
+| `tactic <tac>` | Apply a Rocq tactic directly (bypasses the LLM). Example: `tactic intros n.`                                                                                                                    |
+| `hint <text>`  | Inject a natural-language hint into the agent's next prompt. Example: `hint try induction on n`                                                                                                 |
+| `rollback [n]` | Undo the last `n` applied tactics (default 1), regardless of whether they were applied by you or the agent. If `n` exceeds the number of applied tactics, rolls back to `Proof.` with a warning |
+| `search <cmd>` | Run a Rocq query and print the results (display-only; does not inject into LLM context). Examples: `search Search Z.add`, `search Print Z.add_comm`, `search Check Z.add`                       |
+| `status`       | Display the current proof goal and hypotheses                                                                                                                                                   |
+| `tree`         | Display the current proof tree with tactic history                                                                                                                                              |
+| `help`         | Print all available commands                                                                                                                                                                    |
+| `quit`         | Exit the session                                                                                                                                                                                |
 
 ---
 
 ### Replicating Results from Paper
 
-<details> 
-<summary><b>Reproducing Figures</b></summary>
-
-<br>
+**Reproducing Figures**
 
 - Figure 3
 
@@ -183,16 +183,10 @@ python3 scripts/analyze/draw_results.py \
 ```bash
 python3 scripts/analyze/plot_searches.py
 ```
-</details> 
 
-<details> 
-<summary><b>Setting Up Comparison Tools</b></summary>
-
-<br>
+**Setting Up Comparison Tools**
 
 Coming soon...
-
-</details>
 
 ---
 
@@ -213,3 +207,4 @@ If you use our work for academic research, please cite our paper:
   publisher={ACM New York, NY, USA}
 }
 ```
+

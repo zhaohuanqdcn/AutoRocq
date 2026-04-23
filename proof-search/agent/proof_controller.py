@@ -52,7 +52,6 @@ class ProofController:
 
         # Interactive mode
         self.interactive = interactive or InteractiveConfig()
-        self._baseline_steps = 0  # Pre-existing steps from human edits
 
         self.max_steps = max_steps
         self.max_errors = max_errors
@@ -66,7 +65,7 @@ class ProofController:
 
         # Interactive session state
         self._pending_hints: List[str] = []        # User hints to inject into next prompt
-        self._tactics_with_states: List[Dict] = [] # Accumulated successful tactics (interactive)
+        self._tactics_with_states: List[Dict] = [] # All applied tactics (user + agent); source field distinguishes them
         
         # Initialize proof recorder
         self.enable_recording = enable_recording
@@ -249,13 +248,6 @@ class ProofController:
             self.logger.error("❌ No unproven proof available")
             return False
 
-        # Baseline: pre-existing steps from human edits (excluding 'Proof.')
-        self._baseline_steps = max(0, len(unproven_proof.steps) - 1) if self.interactive.enabled else 0
-        if self._baseline_steps > 0:
-            self.logger.info(f"🤝 Interactive mode: {self._baseline_steps} pre-existing tactic(s) preserved")
-            for i, step in enumerate(unproven_proof.steps):
-                self.logger.info(f"   [{i}] {step.text.strip()}")
-
         self._init_proof_tree()
         self.logger.info("🌳 Initialized new ProofTree")
 
@@ -338,12 +330,11 @@ class ProofController:
           {'type': 'done', 'success': bool}
 
         Requires _init_proof_session() to have been called first.
-        Syncs agent-only tactics to self._tactics_with_states before each yield so
-        callers (quit, _finish_proof) always see current state.
+        self._tactics_with_states is updated in-place so callers always see current state.
         """
-        # User tactics applied via _do_user_tactic() are NOT included;
-        # They are accounted for via _baseline_steps instead.
-        agent_tactics = []
+        # self._tactics_with_states holds all applied tactics (user + agent, in order).
+        # source field on each entry distinguishes them. Using an instance variable
+        # means external user rollback is visible when the generator resumes.
 
         consecutive_queries = 0
         consecutive_errors = 0
@@ -379,10 +370,10 @@ class ProofController:
 
             proof_state = self._build_proof_state()
 
-            current_step_count = len(agent_tactics)
+            current_step_count = len(self._tactics_with_states)
             current_step_count_coq = len(self.coq.proof.steps) if self.coq.proof.steps else 0
-            expected_coq_steps = current_step_count + 1 + self._baseline_steps
-            self.logger.debug(f"Step count: agent={current_step_count}, baseline={self._baseline_steps}, coq_file={current_step_count_coq}")
+            expected_coq_steps = current_step_count + 1  # +1 for Proof.
+            self.logger.debug(f"Step count: total={current_step_count}, coq_file={current_step_count_coq}")
             if expected_coq_steps != current_step_count_coq:
                 self.logger.error(f"Error: Step count mismatch! expected={expected_coq_steps} != coq={current_step_count_coq}. Exiting early...")
                 exit(1)
@@ -440,16 +431,21 @@ class ProofController:
                 self.gen_step_count += 1
                 self.logger.info(f"🔄 Step {self.global_step_id}: ROLLBACK {rollback_steps} step{'s' if rollback_steps != 1 else ''}: {rollback_reason}")
 
+                agent_only = [t for t in self._tactics_with_states if t.get('source') != 'user']
                 rollback_result = self._execute_rollback(
-                    agent_tactics, rollback_reason, proof_tree_str, rb_steps=rollback_steps
+                    agent_only, rollback_reason, proof_tree_str, rb_steps=rollback_steps
                 )
 
                 if rollback_result['success']:
                     target_index = rollback_result['target_index']
                     target_step_number = rollback_result['target_step_number']
                     rollback_distance = rollback_result['rollback_distance']
-                    agent_tactics = agent_tactics[:target_index]
-                    self._tactics_with_states[:] = agent_tactics
+                    # Keep tactics at or before the target step number
+                    if target_index > 0:
+                        self._tactics_with_states[:] = [t for t in self._tactics_with_states
+                                                        if t['step_number'] <= target_step_number]
+                    else:
+                        self._tactics_with_states[:] = []
                     last_tool_success = True
                     _clear_error_tracking()
                     proof_tree_str = self.proof_tree.get_proof_tree_string()
@@ -545,8 +541,8 @@ class ProofController:
                     tactic_content, subgoals_before, subgoals_after,
                     goals_before, current_goals_after, hypotheses_before, current_hypotheses_after
                 )
-                agent_tactics.append(tactic_with_state)
-                self._tactics_with_states[:] = agent_tactics  # keep in sync for quit/save
+                tactic_with_state['source'] = 'agent'
+                self._tactics_with_states.append(tactic_with_state)
 
                 post_tactic_status = self.coq.get_proof_completion_status()
                 proof_complete = post_tactic_status['is_complete'] and post_tactic_status['qed_already_applied']
