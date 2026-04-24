@@ -15,10 +15,16 @@ Commands:
   quit              — exit
 """
 
+from pathlib import Path
 from typing import Optional
 
 from agent.proof_controller import ProofController
 from utils.logger import setup_logger
+
+_COMMANDS = [
+    "step", "run", "tactic ", "hint ", "rollback", "search ",
+    "status", "tree", "help", "quit",
+]
 
 
 class InteractiveSessionManager:
@@ -27,6 +33,42 @@ class InteractiveSessionManager:
         self._gen = None
         self._done: bool = False
         self.logger = setup_logger("InteractiveSession")
+        self._readline_available = False
+        self._history_file: Optional[Path] = None
+        self._setup_readline()
+
+    def _setup_readline(self):
+        try:
+            import readline
+        except ImportError:
+            return # not available on Windows
+
+        self._readline_available = True
+        self._history_file = Path.home() / ".autorocq_history"
+
+        if self._history_file.exists():
+            try:
+                readline.read_history_file(str(self._history_file))
+            except OSError:
+                pass
+
+        readline.set_completer(self._completer)
+        readline.parse_and_bind("tab: complete")
+
+    def _completer(self, text: str, state: int) -> Optional[str]:
+        matches = [c for c in _COMMANDS if c.startswith(text)]
+        return matches[state] if state < len(matches) else None
+
+    def _save_readline_history(self):
+        if not self._readline_available or self._history_file is None:
+            return
+        try:
+            import readline
+            readline.write_history_file(str(self._history_file))
+        except ImportError:
+            pass # not available on Windows
+        except OSError:
+            pass
 
     #####################
     ## Public API      ##
@@ -263,6 +305,7 @@ class InteractiveSessionManager:
         print(self.controller.proof_tree.get_proof_tree_string())
 
     def _do_quit(self):
+        self._save_readline_history()
         self._done = True
 
     ###########################
