@@ -322,7 +322,6 @@ class CoqCommandSearch:
         
         # Ensure the CoqInterface is loaded
         if not hasattr(self.coq, 'proof_file') or self.coq.proof_file is None:
-            self.logger.info("Loading CoqInterface...")
             try:
                 self.coq.load()
                 self.logger.info("✅ CoqInterface loaded successfully")
@@ -339,7 +338,7 @@ class CoqCommandSearch:
         
         # Log reduction if applied
         if reduction_method != "none":
-            self.logger.info(f"Applied {reduction_method}: {original_size} → {final_size} chars ({original_size - final_size} saved)")
+            self.logger.debug(f"Applied {reduction_method}: {original_size} → {final_size} chars ({original_size - final_size} saved)")
         
         return SearchResult(
             content=reduced_content,

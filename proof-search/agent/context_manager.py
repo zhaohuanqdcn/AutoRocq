@@ -1,9 +1,7 @@
 import os
-import re
 import time
 import json
 import traceback
-from copy import deepcopy
 from typing import List, Dict, Any, Optional
 from agent.history_recorder import TacticHistoryManager
 from openai import OpenAI, RateLimitError
@@ -235,7 +233,7 @@ class CoqChatSession:
             content (str): The result/response from executing the tool.
         """
         if not tool_call_id:
-            self.logger.error("⚠️  add_tool_response called without tool_call_id")
+            self.logger.warning("⚠️  add_tool_response called without tool_call_id")
             return
         
         self.messages.append({
@@ -355,12 +353,13 @@ class CoqChatSession:
             }
             
         except RateLimitError as e:
-            self.logger.info(f"Rate limit error encountered: {e}")
-            self.logger.info("Sleeping for 30 seconds to retry...")
+            self.logger.error(f"Rate limit error encountered: {e}")
+            self.logger.warning("Sleeping for 30 seconds to retry...")
             time.sleep(30)
             return {"response": None, "error": "Rate limit error"}
             
         except Exception as e:
+            self.logger.error(f"Error encountered: {e}")
             return {"response": None, "error": str(e)}
     
     def _can_optimize(self) -> bool:
@@ -412,7 +411,7 @@ class CoqChatSession:
         # cache the last message (tool)
         opt_messages[-1]["cache_control"] = {"type": "ephemeral"}
         
-        self.logger.info(f"Messages optimized ({len(self.messages)} -> {len(opt_messages)})")
+        self.logger.debug(f"Messages optimized ({len(self.messages)} -> {len(opt_messages)})")
         
         # update messages and cached length
         self.messages = opt_messages
@@ -603,7 +602,7 @@ class ContextManager:
             llm_result = self.chat_session.send_message(context_prompt, role=role, tool_call_id=tool_call_id, should_optimize=tool_success)
             invalid_error_count = 0
             while llm_result.get("error"):
-                self.logger.warning(f"LLM error: {str(llm_result)}")
+                self.logger.error(f"❌ LLM error: {str(llm_result)}")
                 err_response = llm_result.get("error")
                 if err_response.startswith("Error code: 400"):
                     # This is to retry the request denied by safety policy. Example:
