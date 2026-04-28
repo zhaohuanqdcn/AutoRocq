@@ -131,8 +131,8 @@ class ProofController:
                 self.logger.info(f"📄 History file will be created on first save: {actual_path}")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize TacticHistoryManager: {e}")
             import traceback
+            self.logger.error(f"❌ Failed to initialize TacticHistoryManager: {e}")
             self.logger.error(f"📋 Full error trace: {traceback.format_exc()}")
             self.tactic_history = None         
     
@@ -153,7 +153,7 @@ class ProofController:
                 # Reload current state
                 self._reload_current_proof_state()
             else:
-                self.logger.warning("⚠️ Failed to restart Coq server")
+                self.logger.error("❌ Failed to restart Coq server")
     
     def _cleanup_large_states(self):
         """Clean up large proof states that might cause memory issues."""
@@ -393,7 +393,7 @@ class ProofController:
                 last_tool_success = True
                 prompt = self.context_manager.handle_plan_call(decision_content, tool_call_id)
                 if self.context_manager.should_give_up():
-                    self.logger.info(f"⚠️  Step {self.global_step_id}: PROOF UNPROVABLE -- giving up!")
+                    self.logger.warning(f"⚠️  Step {self.global_step_id}: PROOF UNPROVABLE -- giving up!")
                     self.give_up = True
                     return []
                 self.logger.info(f"✅ Step {self.global_step_id}: PLAN FUNCTION CALLED!")
@@ -484,7 +484,7 @@ class ProofController:
 
                 # Early abort: give up
                 if tactic_content in ["Abort.", "abort.", ]:
-                    self.logger.info(f"⚠️  Step {self.global_step_id}: ABORTING PROOF -- giving up!")
+                    self.logger.warning(f"⚠️  Step {self.global_step_id}: ABORTING PROOF -- giving up!")
                     self.give_up = True
                     return []
 
@@ -610,7 +610,7 @@ class ProofController:
             
             else:
                 prompt = f"Invalid function call: {decision_type}"
-                self.logger.warning(f"❌ Step {self.global_step_id}: INVALID FUNCTION CALL!")
+                self.logger.error(f"❌ Step {self.global_step_id}: INVALID FUNCTION CALL!")
                 continue
         
         return successful_tactics_with_states
@@ -680,7 +680,7 @@ class ProofController:
 
             if creates_branching:
                 if self.proof_tree.open_subgoals:
-                    self.logger.info(f"🌳 Branching tactic detected: {len(subgoals_before)} -> {len(subgoals_after)} subgoals")
+                    self.logger.debug(f"🌳 Branching tactic detected: {len(subgoals_before)} -> {len(subgoals_after)} subgoals")
                     # Add branching node with intermediate subgoal nodes
                     node = self.proof_tree.add_branching_node(
                         tactic=successful_tactic,
@@ -691,14 +691,14 @@ class ProofController:
                         step_number=self.global_step_id,
                         subgoals=subgoals_after
                     )
-                    self.logger.info(f"🌳 Added branching node: {len(subgoals_after)} subgoals created")
+                    self.logger.debug(f"🌳 Added branching node: {len(subgoals_after)} subgoals created")
                 else:
                     self.logger.warning(f"⚠️  No open subgoals to attach branching tactic [{successful_tactic}] to. Skipping node addition.")
 
             else:
                 # Regular linear step - attach to correct subgoal
                 if self.proof_tree.open_subgoals:
-                    self.logger.info(f"🌳 Linear tactic: attaching to correct subgoal")
+                    self.logger.debug(f"🌳 Linear tactic: attaching to correct subgoal")
                     # Use the smart attachment method
                     node = self.proof_tree.attach_to_correct_subgoal(
                         tactic=successful_tactic,
@@ -712,7 +712,7 @@ class ProofController:
                     )                                 
                 else:
                     # No open subgoals - add as regular node
-                    self.logger.info(f"🌳 Linear tactic: no open subgoals, adding regular node")
+                    self.logger.debug(f"🌳 Linear tactic: no open subgoals, adding regular node")
                     if self.proof_tree.open_subgoals:
                         node = self.proof_tree.add_node(
                             tactic=successful_tactic,
@@ -886,8 +886,8 @@ class ProofController:
             }
             
         except Exception as e:
-            self.logger.error(f"💀 Exception during rollback execution: {e}")
             import traceback
+            self.logger.error(f"💀 Exception during rollback execution: {e}")
             self.logger.error(f"📋 Rollback traceback: {traceback.format_exc()}")
             return {
                 'success': False,
@@ -933,8 +933,8 @@ class ProofController:
         else:
             hammer_error = self.coq.get_last_error()
             if "ATPs failed to find a proof" in hammer_error:
-                self.logger.debug(f"🔧 Hammer is not able to find a proof. Continuing...")
+                self.logger.info(f"🔧 Hammer is not able to find a proof. Continuing...")
             else:
-                self.logger.error(f"🔧 Hammer failed with unknown error: {hammer_error}")
+                self.logger.warning(f"🔧 Hammer failed with unknown error: {hammer_error}")
             return False
         

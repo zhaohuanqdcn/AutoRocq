@@ -56,7 +56,7 @@ class CoqInterface:
         try:
             coqproject_path = Path(self.workspace or Path(self.file_path).parent) / "_CoqProject"
             
-            self.logger.info(f"Setting up _CoqProject at {coqproject_path}")
+            self.logger.debug(f"Setting up _CoqProject at {coqproject_path}")
             
             # Create _CoqProject content
             content_lines = []
@@ -72,12 +72,12 @@ class CoqInterface:
                     lib_path = os.path.abspath(os.path.join(workspace_dir, lib_path))
                 
                 content_lines.append(f"-R {lib_path} {lib_name}")
-                self.logger.info(f"  Added library mapping: {lib_path} -> {lib_name}")
+                self.logger.debug(f"  Added library mapping: {lib_path} -> {lib_name}")
             
             # Add extra options
             for option in self.coqproject_extra_options:
                 content_lines.append(option)
-                self.logger.info(f"  Added extra option: {option}")
+                self.logger.debug(f"  Added extra option: {option}")
             
             # Write _CoqProject file
             with open(coqproject_path, 'w') as f:
@@ -114,7 +114,7 @@ class CoqInterface:
             # Pop 'Admitted.' to open the proof for tactic replay
             if self.proof and self.proof.steps and self.proof.steps[-1].text.strip() == "Admitted.":
                 self.proof_file.pop_step(self.proof)
-                self.logger.info("Removed 'Admitted.' to open proof for replay")
+                self.logger.debug("Removed 'Admitted.' to open proof for replay")
             
             self.logger.info(f"Successfully loaded proof with {len(self.proof.steps)} initial steps")
             
@@ -305,7 +305,7 @@ class CoqInterface:
         
         # Log replacements
         if tactic != original:
-            self.logger.info(f"🔧 Sanitized tactic: '{original}' → '{tactic}'")
+            self.logger.debug(f"🔧 Sanitized tactic: '{original}' → '{tactic}'")
         
         return tactic
     
@@ -345,7 +345,7 @@ class CoqInterface:
             
             try:
                 # Apply the tactic with proper spacing
-                self.logger.info(f"➡️ Applying tactic: {tactic_clean}")
+                self.logger.debug(f"➡️ Applying tactic: {tactic_clean}")
                 formatted_tactic = f"\n  {tactic_clean}"
                 
                 # Get current step count before adding
@@ -423,7 +423,7 @@ class CoqInterface:
             elif len(exception_str) > 50:  # Substantial error message
                 error_parts.append(exception_str)
         except Exception as e:
-            self.logger.debug(f"Error extracting from exception: {e}")
+            self.logger.warning(f"Error extracting from exception: {e}")
         
         # Method 2: Check proof file diagnostics
         try:
@@ -437,7 +437,7 @@ class CoqInterface:
                         ]) or tactic.lower().replace('.', '') in msg.lower()):
                             error_parts.append(msg)
         except Exception as e:
-            self.logger.debug(f"Error checking proof file diagnostics: {e}")
+            self.logger.warning(f"Error checking proof file diagnostics: {e}")
         
         # Method 3: Check proof file errors  
         try:
@@ -446,12 +446,7 @@ class CoqInterface:
                     if hasattr(error, 'message') and error.message:
                         error_parts.append(error.message)
         except Exception as e:
-            self.logger.debug(f"Error checking proof file errors: {e}")
-        
-        # Method 4: REMOVED - was causing "Syntax error: illegal begin of vernac."
-        # The manual error capture was working but causing extra syntax errors
-        # Since we're already getting perfect error collection (100% success rate),
-        # we don't need this method anymore.
+            self.logger.warning(f"Error checking proof file errors: {e}")
         
         # Combine and deduplicate error parts
         if error_parts:
@@ -485,7 +480,7 @@ class CoqInterface:
             
             self.logger.info("== Current proof steps ==")
             for i, step in enumerate(self.proof.steps):
-                self.logger.info(f"Step {i+1}: {step.text.strip()}")
+                self.logger.debug(f"Step {i+1}: {step.text.strip()}")
                 
         except Exception as e:
             self.logger.error(f"Error printing steps: {e}")
@@ -624,14 +619,14 @@ class CoqInterface:
             steps_to_remove = current_steps - target_step
     
             self.logger.info(f"Resetting proof from step {current_steps} to step {target_step}")
-            self.logger.info(f"Will pop {steps_to_remove} steps (but never below 'Proof.')")
+            self.logger.debug(f"Will pop {steps_to_remove} steps (but never below 'Proof.')")
             # Pop steps back to target, but never pop "Proof."
             successful_pops = 0
             failed_pops = 0
     
             for i in range(steps_to_remove):
                 if len(self.proof.steps) <= min_steps:
-                    self.logger.info("Reached 'Proof.' step; will not pop further.")
+                    self.logger.debug("Reached 'Proof.' step; will not pop further.")
                     break
                 try:
                     if self.proof.steps:
@@ -1328,39 +1323,7 @@ class CoqInterface:
             import traceback
             traceback.print_exc()
             return []
-    '''
-    def get_subgoals(self) -> list:
-        """
-        Return a list of current subgoals (as strings).
-        """
-        try:
-            # Get the most recent goals
-            goals_str = self.get_goal_str()
-            
-            # Handle "Proof finished" case
-            if "proof finished" in goals_str.lower() or not goals_str.strip():
-                return []
-                
-            # Clean up the goals string
-            goals_str = goals_str.replace("Goals:", "").strip()
-            
-            # Split by lines of dashes (Coq uses these to separate subgoals)
-            parts = re.split(r'-{10,}', goals_str)
-            
-            # Remove empty and whitespace-only entries, and "Bullet: None"
-            subgoals = []
-            for p in parts:
-                cleaned = p.strip()
-                if cleaned and "Bullet: None" not in cleaned and cleaned != "Goals:":
-                    subgoals.append(cleaned)
-                    
-            self.logger.debug(f"Extracted {len(subgoals)} subgoals: {[sg[:50] + '...' if len(sg) > 50 else sg for sg in subgoals]}")
-            return subgoals
-            
-        except Exception as e:
-            self.logger.error(f"Error getting subgoals: {e}")
-            return []
-    '''
+
     def restart_coq_server(self):
         """
         Restart the Coq server to clear memory and reset state.
