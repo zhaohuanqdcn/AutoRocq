@@ -152,6 +152,7 @@ Or enable it permanently in your config:
 | `rollback [n]` | Undo the last `n` applied tactics (default 1), regardless of whether they were applied by you or the agent. If `n` exceeds the number of applied tactics, rolls back to `Proof.` with a warning |
 | `search <cmd>` | Run a Rocq query and print the results (display-only; does not inject into LLM context). Examples: `search Search Z.add`, `search Print Z.add_comm`, `search Check Z.add`                       |
 | `status`       | Display the current proof goal and hypotheses                                                                                                                                                   |
+| `explain`      | Show agent reasoning history                                                                                                                                                                    |
 | `tree`         | Display the current proof tree with tactic history                                                                                                                                              |
 | `help`         | Print all available commands                                                                                                                                                                    |
 | `quit`         | Exit the session                                                                                                                                                                                |

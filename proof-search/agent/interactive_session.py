@@ -11,6 +11,7 @@ Commands:
   search <cmd>      — run a Rocq query (e.g. Search Z.add, Print Z.add_comm, Check Z.add)
   status            — display current proof state
   tree              — display proof tree
+  explain           — show agent reasoning trace
   help              — show this help
   quit              — exit
 """
@@ -19,11 +20,12 @@ from pathlib import Path
 from typing import Optional
 
 from agent.proof_controller import ProofController
+from agent import visualizer
 from utils.logger import setup_logger
 
 _COMMANDS = [
     "step", "run", "tactic ", "hint ", "rollback", "search ",
-    "status", "tree", "help", "quit",
+    "status", "tree", "explain", "help", "quit",
 ]
 
 
@@ -148,6 +150,8 @@ class InteractiveSessionManager:
                     self._display_state()
                 case "tree":
                     self._do_tree()
+                case "explain":
+                    self._do_explain()
                 case "help":
                     self._do_help()
                 case "quit":
@@ -285,6 +289,9 @@ class InteractiveSessionManager:
         else:
             print(f"No results for '{cmd}'.")
 
+    def _do_explain(self):
+        print(visualizer.render_explain(self.controller.context_manager))
+
     def _do_help(self):
         print("Commands:")
         print("  step              — agent takes one action (tactic or rollback)")
@@ -295,14 +302,12 @@ class InteractiveSessionManager:
         print("  search <cmd>      — run a Rocq query, e.g. 'search Search Z.add' or 'search Print Z.add_comm'")
         print("  status            — display current proof state")
         print("  tree              — display proof tree")
+        print("  explain           — show agent reasoning trace")
         print("  help              — show this help")
         print("  quit              — exit")
 
     def _do_tree(self):
-        if self.controller.proof_tree is None:
-            print("No proof tree available yet.")
-            return
-        print(self.controller.proof_tree.get_proof_tree_string())
+        print(visualizer.render_tree(self.controller.proof_tree))
 
     def _do_quit(self):
         self._save_readline_history()
@@ -340,27 +345,19 @@ class InteractiveSessionManager:
             return {'type': 'done', 'success': self.controller.is_successful}
 
     def _display_state(self):
-        goals = self.controller.coq.get_goal_str()
-        hyps = self.controller.coq.get_hypothesis()
-        print("=" * 50)
-        print("Current proof state:")
-        if hyps:
-            print(f"  Hypotheses: {hyps}")
-        if goals and goals != "No current goals":
-            print(f"  {goals}")
-        else:
-            print("  No current goals.")
-        print("=" * 50)
+        goals = self.controller.coq.get_goal_str() or ""
+        print(visualizer.render_state(goals))
 
     def _report(self, result):
         t = result.get('type')
         if t == 'tactic':
-            if result.get('success'):
-                print(f"Agent applied: {result['tactic']}")
-                if result.get('proof_complete'):
-                    print("🎉 Proof complete!")
-            else:
-                print(f"Agent tactic failed: {result.get('tactic', '?')!r} — {result.get('error', '')}")
+            tactic = result.get('tactic', '?')
+            success = result.get('success', False)
+            print(visualizer.render_action('tactic', tactic, success), end='')
+            if success and result.get('proof_complete'):
+                print("🎉 Proof complete!")
+            elif not success:
+                print(f"  — {result.get('error', '')}")
         elif t == 'rollback':
             if result.get('success'):
                 print(f"Agent rolled back {result.get('distance', '?')} step(s).")

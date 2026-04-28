@@ -580,6 +580,27 @@ class ProofTree:
         return "\n".join(lines)
 
 
+    def render(self) -> str:
+        """
+        Return an indented text representation of the proof tree.
+
+        Each node is labelled with its tactic and a status annotation drawn
+        from the set {open, solved, failed}.  Satisfies T-2.1 and FR-2.2.
+        """
+        if not self.root:
+            return "Proof tree is empty."
+
+        lines = []
+
+        def _walk(node: "ProofTreeNode", indent: str = "") -> None:
+            label = node.tactic.strip() if not node.is_subgoal_node() else node.tactic
+            lines.append(f"{indent}{label}  [{node.status}]")
+            for child in node.children:
+                _walk(child, indent + "  ")
+
+        _walk(self.root)
+        return "\n".join(lines)
+
     def save_debug_png(self, step_number: int, tactic: str, out_dir: str = ".", prefix: str = ""):
         """
         Save a PNG of the current proof tree for debugging after each tactic.

@@ -473,8 +473,11 @@ class ContextManager:
         self.current_step = 0
         self.proof_plan = proof_plan
         self.enable_local_session_caching = enable_local_session_caching
-        
-        # Initialize context search 
+
+        # Tracks the most recent agent action for explain() / visualizer
+        self.last_action_info: Dict[str, Any] = {}
+
+        # Initialize context search
         try:
             self.context_search = ContextSearch(coq_interface, history_file)
             self.logger.info(f"✅ Context search initialized successfully")
@@ -528,13 +531,19 @@ class ContextManager:
         return tool_response
     
     def handle_query_call(self, query_content: str, tool_call_id: str) -> str:
-        
+
         if not self.enable_context_search:
             return "No results found: 'query' tool not available."
-        
+
         # Execute context search
         search_result, success = self._execute_context_search(query_content)
-        
+
+        # Store for explain() / visualizer
+        self.last_action_info.update({
+            "query": query_content,
+            "query_result": search_result,
+        })
+
         # Send tool response with query results
         tool_response = (
             f"Query executed: {query_content}\n\n"
@@ -542,7 +551,7 @@ class ContextManager:
         )
         if not success:
             tool_response += "\nYou may consider using a different query."
-        
+
         return tool_response
 
     def get_tactic(self, tactic_content: str, tool_call_id: str) -> str:
@@ -614,6 +623,11 @@ class ContextManager:
             tool_call_id = llm_result.get("tool_call_id")
             self.logger.info(f"LLM function call: {llm_result['function_call']['name']}({llm_result['function_call']['arguments']})")
             decision = self._parse_llm_decision(llm_result)
+            if decision:
+                self.last_action_info = {
+                    "type": decision.get("type"),
+                    "content": decision.get("content"),
+                }
             return decision, tool_call_id
         
         except Exception as e:

@@ -5,6 +5,7 @@ from typing import Dict, Optional, Any, List
 from backend.coq_interface import CoqInterface
 from agent.context_manager import ContextManager
 from agent.proof_tree import ProofTree
+from agent import visualizer
 from utils.recorder import create_proof_recorder
 from utils.logger import clean_ansi_codes, setup_logger
 from utils.coq_utils import hints_from_error, goal_diff
@@ -400,6 +401,7 @@ class ProofController:
             if decision_type == 'plan':
                 last_tool_success = True
                 prompt = self.context_manager.handle_plan_call(decision_content, tool_call_id)
+                print(visualizer.render_action('plan', decision_content))
                 if self.context_manager.should_give_up():
                     self.logger.info(f"⚠️  Step {self.global_step_id}: PROOF UNPROVABLE -- giving up!")
                     self.give_up = True
@@ -419,6 +421,7 @@ class ProofController:
                     continue
                 self.query_commands.append(decision_content)
                 prompt = self.context_manager.handle_query_call(decision_content, tool_call_id)
+                print(visualizer.render_action('query', decision_content))
                 if consecutive_queries == self.max_context_search:
                     prompt += "\n\nYou have hit the maximum number of 'query' calls. Please proceed with the current information until a successful 'tactic', or 'rollback' is applied."
                 self.logger.info(f"✅ Step {self.global_step_id}: QUERY success: {decision_content}")
@@ -450,6 +453,7 @@ class ProofController:
                     _clear_error_tracking()
                     proof_tree_str = self.proof_tree.get_proof_tree_string()
                     self.logger.info(f"✅ Rollback successful: {rollback_distance} step{'s' if rollback_distance != 1 else ''} back to index {target_index} (step_number {target_step_number})")
+                    print(visualizer.render_action('rollback', rollback_data))
                     prompt = (
                         f"Rollback completed successfully. Returned {rollback_distance} step{'s' if rollback_distance != 1 else ''} back to step {target_step_number}.\n\n"
                         f"## CURRENT PROOF TREE:\n{proof_tree_str}\n\n"
@@ -505,6 +509,8 @@ class ProofController:
 
                 prompt = ""
                 success = self._apply_tactic(tactic_content)
+
+                print(visualizer.render_action('tactic', tactic_content, success))
 
                 if not success:
                     consecutive_errors += 1
